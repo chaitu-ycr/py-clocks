@@ -1,6 +1,6 @@
 [project]
 name = "py-clocks"
-version = "26.0.0"
+version = "26.0.1"
 description = "The py-clocks package is a Python-based project designed for displaying multiple timezone clocks in windows desktop."
 license = { file = "LICENSE" }
 readme = "README.md"

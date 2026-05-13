@@ -1,117 +1,216 @@
-import logging
-from datetime import datetime
-from typing import List
-from nicegui import ui
+from __future__ import annotations
 
-from py_clocks.ui_core.ui_theme import apply_theme
-from py_clocks.ui_core.panel import panel_section
-from py_clocks.ui_core.widgets.clock_widget import ClockWidget
-from py_clocks.ui_core.widgets.stopwatch_widget import Stopwatch
-from py_clocks.ui_core.widgets.timer_widget import Timer
-from py_clocks.ui_core.widgets.alarm_widget import Alarm
-from py_clocks.ui_core.utils import play_beep
+import time
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Dict, List
+
+import dearpygui.dearpygui as dpg
+import pytz
+
+
+@dataclass
+class WorldClock:
+    timezone: str
+    label: str
+    text_tag: str = field(default="")
+
+
+@dataclass
+class AlertRule:
+    name: str
+    interval_minutes: int
+    color: tuple[int, int, int]
+    last_trigger_at: float = field(default_factory=time.time)
+    next_due_tag: str = field(default="")
 
 
 class PyClocks:
-    UPDATE_INTERVAL = 0.1
-
-    def __init__(self, panel_width: int = 400, panel_height: int = 300, timezones: List[dict] | None = None):
-        self.panel_width = panel_width
-        self.panel_height = panel_height
-        self.clocks: List[ClockWidget] = []
-        self.stopwatch = Stopwatch()
-        self.timer = Timer()
-        self.alarm = Alarm()
-        self.format_24h = False
-        self.date_format = 'ISO'
-        self.timezones = timezones or [
-            {"timezone": "Asia/Kolkata", "label": "🇮🇳 INDIA", "bg_color": "#ffcc00", "text_color": "#000000"},
-            {"timezone": "Europe/Berlin", "label": "🇩🇪 GERMANY", "bg_color": "#00aaff", "text_color": "#000000"},
-            {"timezone": "Asia/Tokyo", "label": "🇯🇵 JAPAN", "bg_color": "#ff4444", "text_color": "#ffffff"},
+    def __init__(self) -> None:
+        self.world_clocks: List[WorldClock] = [
+            WorldClock("UTC", "🌍 UTC"),
+            WorldClock("America/New_York", "🗽 New York"),
+            WorldClock("Asia/Tokyo", "🗼 Tokyo"),
         ]
-        logging.info("PyClocks initialized")
+        self.stopwatch_running = False
+        self.stopwatch_start = 0.0
+        self.stopwatch_elapsed = 0.0
+        self.stopwatch_laps: List[str] = []
 
-    def setup_ui(self):
-        apply_theme(self.panel_width, self.panel_height)
+        self.alert_rules: List[AlertRule] = [
+            AlertRule("👀 Close eyes break", 30, (255, 0, 255)),
+            AlertRule("🚶 2 minute walk", 60, (0, 255, 255)),
+        ]
+        self.active_glow_until = 0.0
+        self.default_alert_color = (45, 45, 60)
 
-        with ui.header(elevated=True).classes('items-center').style('background: #00ffff; padding: 8px; border-bottom: 4px solid #00cccc;'):
-            with ui.row().classes('items-center justify-between w-full'):
-                with ui.row().classes('items-center gap-2'):
-                    ui.icon('schedule', size='1.4rem').classes('text-black')
-                    ui.label('PY_CLOCKS').classes('text-lg font-bold').style('color: #000000; font-family: "Courier New", monospace; letter-spacing: 2px;')
-                with ui.row().classes('items-center gap-2'):
-                    ui.label('24H').classes('text-black text-xs font-bold')
-                    ui.switch(value=self.format_24h, on_change=lambda e: self.set_24h(e.value)).props('dense').classes('retro-toggle')
-                    ui.label('Date').classes('text-black text-xs font-bold')
-                    ui.switch(value=(self.date_format == 'Locale'), on_change=lambda e: self.set_date_format('Locale' if e.value else 'ISO')).props('dense').classes('retro-toggle')
+        self._clock_group_tag = "clock_rows"
+        self._laps_tag = "lap_list"
+        self._alerts_tag = "alert_rows"
 
-        with ui.column().classes('w-full').style('height: calc(100vh - 55px); overflow: hidden; padding: 12px;'):
-            with ui.element('div').classes('w-full app-grid'):
-                with panel_section('🌍 WORLD CLOCK', accent='#ffff00', bg='#1a1a00'):
-                    with ui.column().classes('gap-1').style('display: flex; flex: 1; min-height: 0; gap: 2px;'):
-                        for cfg in self.timezones:
-                            c = ClockWidget(cfg['timezone'], cfg['label'], cfg['bg_color'], cfg['text_color'])
-                            c.set_format(self.format_24h)
-                            c.set_date_format(self.date_format)
-                            c.render()
-                            self.clocks.append(c)
+    @staticmethod
+    def _fmt_duration(total_seconds: float) -> str:
+        minutes, seconds = divmod(int(total_seconds), 60)
+        hours, minutes = divmod(minutes, 60)
+        millis = int((total_seconds % 1) * 100)
+        return f"{hours:02}:{minutes:02}:{seconds:02}.{millis:02}"
 
-                with panel_section('⏱️ STOPWATCH', accent='#00ff00', bg='#001a00'):
-                    self.stopwatch.render()
+    def _world_time_text(self, timezone: str) -> str:
+        zone = pytz.timezone(timezone)
+        now = datetime.now(zone)
+        return now.strftime("%Y-%m-%d %H:%M:%S")
 
-                with panel_section('⏲️ TIMER', accent='#00ffff', bg='#001a1a'):
-                    self.timer.render()
+    def _render_clock_rows(self) -> None:
+        dpg.delete_item(self._clock_group_tag, children_only=True)
+        with dpg.group(parent=self._clock_group_tag):
+            for clock in self.world_clocks:
+                clock.text_tag = f"clock_{clock.label}_{clock.timezone}".replace(" ", "_")
+                dpg.add_text(f"{clock.label} ({clock.timezone})")
+                dpg.add_text(self._world_time_text(clock.timezone), tag=clock.text_tag)
+                dpg.add_separator()
 
-                with panel_section('⏰ ALARMS', accent='#ff00ff', bg='#1a001a'):
-                    self.alarm.render()
+    def _render_alert_rows(self) -> None:
+        dpg.delete_item(self._alerts_tag, children_only=True)
+        with dpg.group(parent=self._alerts_tag):
+            for i, rule in enumerate(self.alert_rules):
+                rule.next_due_tag = f"next_due_{i}"
+                with dpg.group(horizontal=True):
+                    dpg.add_text(f"{rule.name} every {rule.interval_minutes} min")
+                    dpg.add_spacer(width=20)
+                    dpg.add_text("next in --", tag=rule.next_due_tag)
 
-        ui.timer(self.UPDATE_INTERVAL, self.update_all_components)
-        self.update_all_components()
-
-    def update_all_components(self):
-        for clock in self.clocks:
-            clock.update()
-        self.stopwatch.update_display()
-        self.timer.update_display()
-        self.check_alarms()
-
-    def set_24h(self, value: bool):
-        self.format_24h = bool(value)
-        for c in self.clocks:
-            c.set_format(self.format_24h)
-            c.update()
-
-    def set_date_format(self, fmt: str):
-        if fmt not in ('ISO', 'Locale'):
+    def add_world_clock(self) -> None:
+        timezone = dpg.get_value("timezone_input").strip()
+        label = dpg.get_value("label_input").strip() or timezone
+        if timezone not in pytz.all_timezones:
+            dpg.set_value("clock_error", f"Unknown timezone: {timezone}")
             return
-        self.date_format = fmt
-        for c in self.clocks:
-            c.set_date_format(self.date_format)
-            c.update()
+        self.world_clocks.append(WorldClock(timezone, label))
+        dpg.set_value("clock_error", "")
+        self._render_clock_rows()
 
-    def check_alarms(self):
-        if not self.alarm or not self.alarm.alarms:
+    def add_alert_rule(self) -> None:
+        name = dpg.get_value("alert_name_input").strip()
+        minutes_raw = dpg.get_value("alert_interval_input")
+        if not name:
+            dpg.set_value("alert_error", "Alert name is required")
             return
-        now = datetime.now()
-        key = now.strftime('%Y%m%d%H%M')
-        for a in self.alarm.alarms:
-            try:
-                if not a.get('enabled'):
-                    continue
-                hr = int(a.get('hour', -1)); mn = int(a.get('minute', -1))
-                if hr == now.hour and mn == now.minute and a.get('last_trigger') != key:
-                    a['last_trigger'] = key
-                    ui.notify(f"🔔 Alarm: {a.get('label','Alarm')} {hr:02d}:{mn:02d}", type='warning', position='top', timeout=5000)
-                    play_beep()
-                    self.alarm.save_alarms()
-            except Exception as e:
-                logging.error(f'Alarm check error: {e}')
+        if minutes_raw <= 0:
+            dpg.set_value("alert_error", "Interval must be greater than 0")
+            return
+        palette = [(255, 80, 80), (80, 255, 80), (80, 180, 255), (255, 80, 255), (255, 200, 80)]
+        color = palette[len(self.alert_rules) % len(palette)]
+        self.alert_rules.append(AlertRule(name, int(minutes_raw), color))
+        dpg.set_value("alert_error", "")
+        self._render_alert_rows()
 
-    def run(self, host: str = '0.0.0.0', port: int = 9400, title: str = 'PY_CLOCKS', reload: bool = False):
-        self.setup_ui()
-        ui.run(host=host, port=port, title=title, reload=reload)
+    def start_stopwatch(self) -> None:
+        if self.stopwatch_running:
+            return
+        self.stopwatch_running = True
+        self.stopwatch_start = time.time() - self.stopwatch_elapsed
+
+    def pause_stopwatch(self) -> None:
+        if not self.stopwatch_running:
+            return
+        self.stopwatch_running = False
+        self.stopwatch_elapsed = time.time() - self.stopwatch_start
+
+    def reset_stopwatch(self) -> None:
+        self.stopwatch_running = False
+        self.stopwatch_start = 0.0
+        self.stopwatch_elapsed = 0.0
+        self.stopwatch_laps.clear()
+        dpg.delete_item(self._laps_tag, children_only=True)
+
+    def lap_stopwatch(self) -> None:
+        current = time.time() - self.stopwatch_start if self.stopwatch_running else self.stopwatch_elapsed
+        lap_text = self._fmt_duration(current)
+        self.stopwatch_laps.append(lap_text)
+        dpg.add_text(f"Lap {len(self.stopwatch_laps):02}: {lap_text}", parent=self._laps_tag)
+
+    def update(self) -> None:
+        now = time.time()
+        for clock in self.world_clocks:
+            if clock.text_tag and dpg.does_item_exist(clock.text_tag):
+                dpg.set_value(clock.text_tag, self._world_time_text(clock.timezone))
+
+        elapsed = time.time() - self.stopwatch_start if self.stopwatch_running else self.stopwatch_elapsed
+        dpg.set_value("stopwatch_display", self._fmt_duration(elapsed))
+
+        for rule in self.alert_rules:
+            elapsed_sec = now - rule.last_trigger_at
+            due_in = max(0, rule.interval_minutes * 60 - elapsed_sec)
+            if rule.next_due_tag and dpg.does_item_exist(rule.next_due_tag):
+                dpg.set_value(rule.next_due_tag, f"next in {int(due_in // 60):02}:{int(due_in % 60):02}")
+            if elapsed_sec >= rule.interval_minutes * 60:
+                rule.last_trigger_at = now
+                self.active_glow_until = now + 8.0
+                dpg.set_value("alert_status", f"ALERT: {rule.name}")
+
+        if now < self.active_glow_until:
+            t = int((now * 8) % 2)
+            color = (255, 0, 180) if t else (0, 255, 255)
+            dpg.configure_item("alerts_window", border=True)
+            dpg.bind_item_theme("alerts_window", self._make_alert_theme(color))
+        else:
+            dpg.bind_item_theme("alerts_window", self._make_alert_theme(self.default_alert_color))
+            dpg.set_value("alert_status", "All alerts idle")
+
+    def _make_alert_theme(self, border_color: tuple[int, int, int]):
+        theme_tag = f"alerts_theme_{border_color[0]}_{border_color[1]}_{border_color[2]}"
+        if dpg.does_item_exist(theme_tag):
+            return theme_tag
+        with dpg.theme(tag=theme_tag):
+            with dpg.theme_component(dpg.mvAll):
+                dpg.add_theme_color(dpg.mvThemeCol_Border, (*border_color, 255), category=dpg.mvThemeCat_Core)
+                dpg.add_theme_style(dpg.mvStyleVar_WindowBorderSize, 4, category=dpg.mvThemeCat_Core)
+        return theme_tag
+
+    def build_ui(self) -> None:
+        dpg.create_context()
+        with dpg.window(label="World Clocks", width=520, height=430, pos=(20, 20)):
+            with dpg.group(horizontal=True):
+                dpg.add_input_text(tag="timezone_input", hint="Timezone e.g. Europe/Berlin", width=220)
+                dpg.add_input_text(tag="label_input", hint="Label", width=120)
+                dpg.add_button(label="Add Clock", callback=lambda: self.add_world_clock())
+            dpg.add_text("", tag="clock_error", color=(255, 80, 80))
+            dpg.add_separator()
+            dpg.add_group(tag=self._clock_group_tag)
+            self._render_clock_rows()
+
+        with dpg.window(label="Stopwatch", width=520, height=330, pos=(20, 470)):
+            dpg.add_text("00:00:00.00", tag="stopwatch_display")
+            with dpg.group(horizontal=True):
+                dpg.add_button(label="Start", callback=lambda: self.start_stopwatch())
+                dpg.add_button(label="Pause", callback=lambda: self.pause_stopwatch())
+                dpg.add_button(label="Lap", callback=lambda: self.lap_stopwatch())
+                dpg.add_button(label="Reset", callback=lambda: self.reset_stopwatch())
+            dpg.add_separator()
+            dpg.add_child_window(tag=self._laps_tag, height=220)
+
+        with dpg.window(label="Alerts", tag="alerts_window", width=560, height=780, pos=(580, 20)):
+            dpg.add_text("All alerts idle", tag="alert_status", color=(255, 220, 80))
+            with dpg.group(horizontal=True):
+                dpg.add_input_text(tag="alert_name_input", hint="Custom alert name", width=240)
+                dpg.add_input_int(tag="alert_interval_input", default_value=45, min_value=1, min_clamped=True, width=100)
+                dpg.add_button(label="Add Alert", callback=lambda: self.add_alert_rule())
+            dpg.add_text("", tag="alert_error", color=(255, 80, 80))
+            dpg.add_separator()
+            dpg.add_group(tag=self._alerts_tag)
+            self._render_alert_rows()
+
+        dpg.create_viewport(title="py-clocks (DearPyGui)", width=1180, height=860)
+        dpg.setup_dearpygui()
+        dpg.show_viewport()
+        dpg.bind_item_theme("alerts_window", self._make_alert_theme(self.default_alert_color))
+
+        while dpg.is_dearpygui_running():
+            self.update()
+            dpg.render_dearpygui_frame()
+
+        dpg.destroy_context()
 
 
-if __name__ in {"__main__", "__mp_main__"}:
-    app = PyClocks()
-    app.run(reload=True)
+if __name__ == "__main__":
+    PyClocks().build_ui()

@@ -90,12 +90,13 @@ class PyClocks:
 
     def _render_clock_rows(self) -> None:
         dpg.delete_item(self._clock_group_tag, children_only=True)
-        for clock in self.world_clocks:
+        for i, clock in enumerate(self.world_clocks):
             clock.text_tag = f"clock_{clock.label}_{clock.timezone}".replace(" ", "_")
-            with dpg.child_window(parent=self._clock_group_tag, height=66, border=True):
-                dpg.bind_item_theme(dpg.last_item(), "card_theme")
+            with dpg.group(parent=self._clock_group_tag):
                 dpg.add_text(clock.label, color=(170, 198, 255))
                 dpg.add_text(f"{clock.timezone} | {self._world_time_text(clock.timezone)}", tag=clock.text_tag, color=(245, 250, 255))
+                if i < len(self.world_clocks) - 1:
+                    dpg.add_separator()
 
     def _render_alert_rows(self) -> None:
         dpg.delete_item(self._alerts_tag, children_only=True)
@@ -208,7 +209,7 @@ class PyClocks:
         dpg.create_context()
         self._setup_modern_theme()
 
-        with dpg.window(label="World Clocks", width=560, height=430, pos=(10, 10), no_scrollbar=True):
+        with dpg.window(label="World Clocks", width=560, height=430, pos=(10, 10), no_scrollbar=False):
             dpg.add_text("Track global time zones", color=(172, 198, 255))
             dpg.add_input_text(tag="timezone_search", hint="Type timezone name", width=250, callback=lambda: self.filter_timezones())
             with dpg.group(horizontal=True):
@@ -216,7 +217,7 @@ class PyClocks:
                 dpg.add_input_text(tag="label_input", hint="Optional label", width=130)
                 dpg.add_button(label="Add", callback=lambda: self.add_world_clock(), width=70)
             dpg.add_text("", tag="clock_error", color=(255, 120, 120))
-            dpg.add_child_window(tag=self._clock_group_tag, autosize_x=True, height=300, border=False)
+            dpg.add_child_window(tag=self._clock_group_tag, autosize_x=True, height=300, border=False, no_scrollbar=True)
             self._render_clock_rows()
 
         with dpg.window(label="Stopwatch", width=560, height=300, pos=(10, 450), no_scrollbar=True):

@@ -1,26 +1,58 @@
 # py_clocks
 
-The `py_clocks` package is a Python-based project designed for displaying multiple timezone clocks on a Windows desktop.
+`py_clocks` is a native desktop clock utility built with **DearPyGui**.
 
-By default, the app shows the time in the following timezones:
-  - **Asia/Tokyo**
-  - **Asia/Kolkata**
-  - **Europe/Berlin**
+It provides three always-on productivity windows:
 
-![py_clocks_app](https://chaitu-ycr.github.io/py-clocks/images/py_clocks_app.png)
+1. **World Clocks**
+   - View multiple timezone clocks.
+   - Add new clocks dynamically.
+   - Search and select timezones from the IANA timezone list.
 
-*Screenshot of the `py_clocks` application showing multiple timezone clocks.*
+2. **Stopwatch**
+   - Start / Pause / Lap / Reset controls.
+   - Live precision display with lap history.
 
-## Building and Running the Project
+3. **Wellness Alerts**
+   - Built-in reminders:
+     - Close eyes every 30 minutes
+     - Take a 2-minute walk every 60 minutes
+   - Add custom alerts with your own interval.
+   - Visual alert window border glow/pulse when reminders trigger.
 
-```.venv/Scripts/python.exe src/py_clocks/app.py```
+## Tech Stack
 
-## Creating an Executable
+- Python 3.10+
+- [DearPyGui](https://github.com/hoffstadt/DearPyGui)
+- pytz
 
-To create a standalone executable for the `py_clocks` package using PyInstaller, use the provided script:
+## Installation
 
-```pyinstaller --onefile src/py_clocks/app.py```
+```bash
+pip install -e .
+```
 
-**Locate the executable**: The generated executable will be located in the `dist` directory as `py_clocks.exe`.
+## Run the App
 
-## [source manual](https://chaitu-ycr.github.io/py-clocks/source-manual)
+```bash
+python src/py_clocks/app.py
+```
+
+## Build an Executable (PyInstaller)
+
+```bash
+pyinstaller --onefile src/py_clocks/app.py
+```
+
+Generated executable:
+
+- `dist/app.exe` (or platform-specific output name)
+
+## Notes
+
+- The app currently uses a fixed viewport/layout tuned for desktop usage.
+- Timezone values use standard IANA timezone names such as `America/New_York` or `Europe/Berlin`.
+
+## Documentation
+
+- [Source manual](https://chaitu-ycr.github.io/py-clocks/source-manual)

@@ -29,7 +29,7 @@ class WorldClocksWindow:
     def __init__(self) -> None:
         self.timezone_choices = sorted(pytz.all_timezones)
         self.clocks: List[WorldClock] = [
-            WorldClock("UTC", "UTC"),
+            WorldClock("Asia/Kolkata", "Kolkata"),
             WorldClock("America/New_York", "New York"),
             WorldClock("Asia/Tokyo", "Tokyo"),
         ]
@@ -76,13 +76,13 @@ class WorldClocksWindow:
     def build(self) -> None:
         with dpg.window(label="World Clocks", width=560, height=430, pos=(10, 10), no_scrollbar=False):
             dpg.add_text("Track global time zones", color=(172, 198, 255))
-            dpg.add_input_text(tag="timezone_search", hint="Type timezone name", width=250, callback=lambda: self.filter_timezones())
             with dpg.group(horizontal=True):
-                dpg.add_combo(self.timezone_choices[:300], tag="timezone_combo", width=250)
+                dpg.add_input_text(tag="timezone_search", hint="Type timezone name", width=150, callback=lambda: self.filter_timezones())
+                dpg.add_combo(self.timezone_choices[:300], tag="timezone_combo", width=150)
                 dpg.add_input_text(tag="label_input", hint="Optional label", width=130)
                 dpg.add_button(label="Add", callback=lambda: self.add_clock(), width=70)
             dpg.add_text("", tag="clock_error", color=(255, 120, 120))
-            dpg.add_child_window(tag=self.clock_group_tag, autosize_x=True, height=300, border=False, no_scrollbar=True)
+            dpg.add_child_window(tag=self.clock_group_tag, autosize_x=True, height=280, border=False, no_scrollbar=True)
             self.render_rows()
 
 
@@ -137,7 +137,7 @@ class StopwatchWindow:
                 dpg.add_button(label="Pause", callback=lambda: self.pause(), width=110)
                 dpg.add_button(label="Lap", callback=lambda: self.lap(), width=110)
                 dpg.add_button(label="Reset", callback=lambda: self.reset(), width=110)
-            dpg.add_child_window(tag=self.laps_tag, height=180, border=True)
+            dpg.add_child_window(tag=self.laps_tag, height=150, border=True)
 
 
 class AlertsWindow:
@@ -211,7 +211,7 @@ class AlertsWindow:
                 dpg.add_input_int(tag="alert_interval_input", default_value=45, min_value=1, min_clamped=True, width=100)
                 dpg.add_button(label="Add Alert", callback=lambda: self.add_alert(), width=100)
             dpg.add_text("", tag="alert_error", color=(255, 120, 120))
-            dpg.add_child_window(tag=self.alerts_tag, autosize_x=True, height=640, border=False)
+            dpg.add_child_window(tag=self.alerts_tag, autosize_x=True, height=590, border=False)
             self.render_rows()
 
 
@@ -256,7 +256,7 @@ class PyClocks:
         self.stopwatch_window.build()
         self.alerts_window.build()
 
-        dpg.create_viewport(title="py-clocks - DearPyGui", width=1230, height=780, resizable=False)
+        dpg.create_viewport(title="py-clocks - DearPyGui", width=1230, height=800, resizable=False)
         dpg.setup_dearpygui()
         dpg.show_viewport()
 
